@@ -5,14 +5,14 @@ import { Button } from '../ui/Button';
 
 // Dashboard Stats Component
 const DashboardStats = () => {
-  const { businessPlans, chatHistory, apiStatus } = useAppContext();
+  const { businessPlans, chatHistory, apiStatus, user } = useAppContext();
   
   const connectedAPIs = Object.values(apiStatus).filter(status => status === 'connected').length;
   
   const stats = useMemo(() => [
     {
       title: 'Бизнес-планы',
-      value: businessPlans.length,
+      value: businessPlans?.length || 0,
       change: '+12% за месяц',
       icon: FileText,
       color: 'text-blue-600',
@@ -20,8 +20,8 @@ const DashboardStats = () => {
     },
     {
       title: 'AI Запросы',
-      value: chatHistory.length + 1247,
-      change: `сегодня: ${chatHistory.length}`,
+      value: (chatHistory?.length || 0) + (user ? 0 : 1247),
+      change: `сегодня: ${chatHistory?.length || 0}`,
       icon: Brain,
       color: 'text-purple-600',
       bgColor: 'bg-purple-50'
@@ -42,7 +42,7 @@ const DashboardStats = () => {
       color: 'text-orange-600',
       bgColor: 'bg-orange-50'
     }
-  ], [businessPlans.length, chatHistory.length, connectedAPIs]);
+  ], [businessPlans?.length, chatHistory?.length, connectedAPIs, user]);
   
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -69,13 +69,18 @@ const DashboardStats = () => {
 
 // Business Plans List Component
 const BusinessPlansList = () => {
-  const { businessPlans, exportDocument, addNotification, setActiveModule } = useAppContext();
+  const { businessPlans, exportDocument, addNotification, setActiveModule, user } = useAppContext();
   
   const handlePreview = (plan) => {
     addNotification(`Предварительный просмотр: ${plan.name}`, 'info', 3000);
   };
   
   const handleQuickExport = async (plan, format) => {
+    if (!user) {
+      addNotification('Войдите в систему для экспорта', 'warning');
+      return;
+    }
+    
     try {
       await exportDocument(format, plan.content, plan.name);
     } catch (error) {
@@ -101,12 +106,14 @@ const BusinessPlansList = () => {
         </Button>
       </div>
       <div className="p-6">
-        {businessPlans.length === 0 ? (
+        {!businessPlans || businessPlans.length === 0 ? (
           <div className="text-center py-8">
             <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 mb-4">Нет созданных проектов</p>
+            <p className="text-gray-500 mb-4">
+              {user ? 'Нет созданных проектов' : 'Войдите для просмотра ваших проектов'}
+            </p>
             <Button onClick={handleCreateNew}>
-              Создать первый бизнес-план
+              {user ? 'Создать первый бизнес-план' : 'Войти в систему'}
             </Button>
           </div>
         ) : (
@@ -117,7 +124,7 @@ const BusinessPlansList = () => {
                   <div className="flex items-center space-x-3 mb-2">
                     <h4 className="font-medium text-gray-900">{plan.name}</h4>
                     <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-                      {plan.aiModel}
+                      {plan.ai_model || plan.aiModel}
                     </span>
                     <span className={`text-xs px-2 py-1 rounded-full ${
                       plan.status === 'completed' 
@@ -127,7 +134,9 @@ const BusinessPlansList = () => {
                       {plan.status === 'completed' ? 'Завершен' : 'Черновик'}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-500">{plan.date}</p>
+                  <p className="text-sm text-gray-500">
+                    {plan.created_at ? new Date(plan.created_at).toLocaleDateString('ru-RU') : plan.date}
+                  </p>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Button

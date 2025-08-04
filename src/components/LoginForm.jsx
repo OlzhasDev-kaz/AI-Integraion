@@ -7,10 +7,10 @@ import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 
 export const LoginForm = () => {
-  const { setIsAuthenticated, addNotification, handleError } = useAppContext();
+  const { signIn, addNotification, handleError, authLoading } = useAppContext();
   const [formData, setFormData] = useState({ 
-    email: 'demo@example.com', 
-    password: 'demo123456' 
+    email: '', 
+    password: '' 
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -37,15 +37,9 @@ export const LoginForm = () => {
     try {
       setIsLoading(true);
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Demo login - accept any valid email/password
-      if (formData.email && formData.password.length >= 6) {
-        setIsAuthenticated(true);
-        addNotification('Добро пожаловать в AI Business Planner!', 'success');
-      } else {
-        throw new Error('Неверные учетные данные');
+      const { error } = await signIn(formData.email, formData.password);
+      if (error) {
+        throw new Error(error.message);
       }
     } catch (error) {
       handleError(error, 'Login');
@@ -55,9 +49,20 @@ export const LoginForm = () => {
   };
 
   const handleDemoLogin = () => {
-    setFormData({ email: 'demo@example.com', password: 'demo123456' });
+    setFormData({ email: 'demo@example.com', password: 'demo123' });
     addNotification('Демо-данные загружены', 'info', 2000);
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Проверка авторизации...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -74,10 +79,10 @@ export const LoginForm = () => {
         {/* Demo notice */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
           <h3 className="text-sm font-medium text-blue-800 mb-2">
-            🚀 Демо версия
+            🚀 Supabase Backend
           </h3>
           <p className="text-sm text-blue-700 mb-3">
-            Используйте любой email и пароль длиннее 6 символов для входа
+            Создайте аккаунт или войдите с существующими данными
           </p>
           <Button
             type="button"
@@ -132,7 +137,7 @@ export const LoginForm = () => {
             <button 
               type="button"
               className="text-blue-600 hover:text-blue-800 font-medium"
-              onClick={() => addNotification('Регистрация временно недоступна в демо', 'info')}
+              onClick={() => addNotification('Функция регистрации будет добавлена позже', 'info')}
             >
               Зарегистрироваться
             </button>
@@ -147,19 +152,19 @@ export const LoginForm = () => {
           <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
             <div className="flex items-center space-x-1">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-              <span>AI помощник</span>
+              <span>Сохранение данных</span>
             </div>
             <div className="flex items-center space-x-1">
               <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
-              <span>Экспорт в Word/PDF</span>
+              <span>Синхронизация</span>
             </div>
             <div className="flex items-center space-x-1">
               <span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span>
-              <span>Анализ файлов</span>
+              <span>История чатов</span>
             </div>
             <div className="flex items-center space-x-1">
               <span className="w-1.5 h-1.5 bg-orange-500 rounded-full"></span>
-              <span>Голосовой ввод</span>
+              <span>Облачное хранение</span>
             </div>
           </div>
         </div>

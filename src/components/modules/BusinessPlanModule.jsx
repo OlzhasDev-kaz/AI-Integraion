@@ -10,11 +10,12 @@ import { ProgressBar } from '../ui/ProgressBar';
 // Chat Interface Component - ИСПРАВЛЕНО
 const ChatInterface = () => {
   const { 
-    chatHistory, 
-    setChatHistory, 
+    chatHistory,
+    createChatMessage,
     isLoading, 
     setIsLoading, 
     currentUser, 
+    user,
     aiModels, 
     apiStatus,
     addNotification,
@@ -60,15 +61,17 @@ const ChatInterface = () => {
     try {
       const userMessage = currentMessage.trim();
       
-      const newMessage = {
-        id: Date.now(),
-        text: userMessage,
-        sender: 'user',
-        timestamp: new Date().toLocaleTimeString('ru-RU')
-      };
-
-      // Добавляем сообщение пользователя
-      setChatHistory(prev => [...prev, newMessage]);
+      // Save user message to database if authenticated
+      if (user?.id && currentUser.preferences.autoSave) {
+        try {
+          await createChatMessage({
+            message: userMessage,
+            sender: 'user'
+          });
+        } catch (dbError) {
+          console.error('Error saving user message to database:', dbError);
+        }
+      }
       
       // Очищаем поле ввода
       setCurrentMessage('');
@@ -76,16 +79,6 @@ const ChatInterface = () => {
 
       // Генерируем ответ AI
       const aiResponseText = await generateAIResponse(userMessage);
-      
-      const aiResponse = {
-        id: Date.now() + 1,
-        text: aiResponseText,
-        sender: 'ai',
-        timestamp: new Date().toLocaleTimeString('ru-RU'),
-        model: currentUser.preferences.aiModel
-      };
-      
-      setChatHistory(prev => [...prev, aiResponse]);
       
       if (currentUser.preferences.autoSave) {
         addNotification('Диалог автоматически сохранен', 'success', 2000);
@@ -297,8 +290,8 @@ const ChatInterface = () => {
 // File Uploader Component (остается без изменений)
 const FileUploader = () => {
   const { 
-    uploadedDatasets, 
-    setUploadedDatasets, 
+    uploadedDatasets,
+    deleteUploadedFile,
     addNotification, 
     handleError, 
     uploadFileWithProgress, 
@@ -336,8 +329,7 @@ const FileUploader = () => {
   };
   
   const removeFile = (id) => {
-    setUploadedDatasets(prev => prev.filter(d => d.id !== id));
-    addNotification('Файл удален', 'info', 2000);
+    deleteUploadedFile(id);
   };
   
   const handleDragOver = (e) => {
@@ -436,7 +428,7 @@ const FileUploader = () => {
 
 // Export Panel Component (остается без изменений)
 const ExportPanel = () => {
-  const { addNotification, exportDocument, exportProgress, chatHistory } = useAppContext();
+  const { addNotification, exportDocument, exportProgress, chatHistory, user } = useAppContext();
   
   const exportOptions = [
     { format: 'docx', icon: '📄', name: 'Word документ', description: 'Редактируемый документ' },
@@ -446,6 +438,11 @@ const ExportPanel = () => {
   ];
   
   const handleExport = async (format, name) => {
+    if (!user) {
+      addNotification('Войдите в систему для экспорта', 'warning');
+      return;
+    }
+    
     if (chatHistory.length === 0) {
       addNotification('Создайте диалог с AI перед экспортом', 'warning');
       return;
@@ -504,7 +501,7 @@ const ExportPanel = () => {
       
       <div className="mt-4 p-3 bg-gray-50 rounded-lg">
         <p className="text-xs text-gray-600">
-          💡 Совет: Создайте подробный диалог с AI помощником перед экспортом для получения полного бизнес-плана
+          💡 Совет: {user ? 'Ваши диалоги автоматически сохраняются в облаке' : 'Войдите в систему для сохранения диалогов'}
         </p>
       </div>
     </div>

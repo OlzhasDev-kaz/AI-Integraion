@@ -584,11 +584,10 @@ ${'='.repeat(50)}`;
 
 // Account Actions Section
 const AccountActionsSection = () => {
-  const { setIsAuthenticated, addNotification } = useAppContext();
+  const { signOut, addNotification } = useAppContext();
   
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    addNotification('Вы вышли из системы', 'info');
+    signOut();
   };
   
   return (
@@ -608,7 +607,7 @@ const AccountActionsSection = () => {
       
       <div className="mt-4 p-3 bg-gray-50 rounded-lg">
         <p className="text-xs text-gray-600">
-          💡 В демо-версии данные не сохраняются между сессиями
+          💡 Ваши данные сохраняются в облаке Supabase
         </p>
       </div>
     </div>
