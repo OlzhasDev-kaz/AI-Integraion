@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Brain } from 'lucide-react';
+import { Brain, ArrowLeft } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useValidation } from '../hooks/useValidation';
 import { validators } from '../utils/validators';
@@ -7,26 +7,47 @@ import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 
 export const LoginForm = () => {
-  const { signIn, addNotification, handleError, authLoading } = useAppContext();
+  const { signIn, signUp, addNotification, handleError, authLoading } = useAppContext();
+  const [isRegistering, setIsRegistering] = useState(false);
   const [formData, setFormData] = useState({ 
     email: '', 
-    password: '' 
+    password: '',
+    confirmPassword: '',
+    name: ''
   });
   const [isLoading, setIsLoading] = useState(false);
 
-  const validationRules = {
+  const loginValidationRules = {
     email: [validators.required, validators.email],
     password: [validators.required, validators.minLength(6)]
   };
 
-  const { errors, validate, validateAll, getFieldError } = useValidation(validationRules);
+  const registrationValidationRules = {
+    name: [validators.required, validators.minLength(2)],
+    email: [validators.required, validators.email],
+    password: [validators.required, validators.minLength(6)],
+    confirmPassword: [validators.required, (value) => {
+      if (value !== formData.password) {
+        return 'Пароли не совпадают';
+      }
+      return null;
+    }]
+  };
+
+  const validationRules = isRegistering ? registrationValidationRules : loginValidationRules;
+  const { errors, validate, validateAll, getFieldError, clearErrors } = useValidation(validationRules);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     validate(field, value);
+    
+    // Re-validate confirm password when password changes
+    if (field === 'password' && formData.confirmPassword && isRegistering) {
+      validate('confirmPassword', formData.confirmPassword);
+    }
   };
 
-  const handleLogin = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!validateAll(formData)) {
@@ -37,19 +58,47 @@ export const LoginForm = () => {
     try {
       setIsLoading(true);
       
-      const { error } = await signIn(formData.email, formData.password);
-      if (error) {
-        throw new Error(error.message);
+      if (isRegistering) {
+        const { error } = await signUp(formData.email, formData.password, {
+          name: formData.name
+        });
+        if (error) {
+          throw new Error(error.message);
+        }
+        addNotification('Аккаунт успешно создан! Теперь вы можете войти.', 'success');
+        setIsRegistering(false);
+        setFormData({ email: formData.email, password: '', confirmPassword: '', name: '' });
+        clearErrors();
+      } else {
+        const { error } = await signIn(formData.email, formData.password);
+        if (error) {
+          throw new Error(error.message);
+        }
       }
     } catch (error) {
-      handleError(error, 'Login');
+      handleError(error, isRegistering ? 'Registration' : 'Login');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const toggleMode = () => {
+    setIsRegistering(!isRegistering);
+    setFormData({ email: '', password: '', confirmPassword: '', name: '' });
+    clearErrors();
+  };
+
   const handleDemoLogin = () => {
-    setFormData({ email: 'demo@example.com', password: 'demo123' });
+    if (isRegistering) {
+      setFormData({ 
+        name: 'Demo User',
+        email: 'demo@example.com', 
+        password: 'demo123',
+        confirmPassword: 'demo123'
+      });
+    } else {
+      setFormData({ email: 'demo@example.com', password: 'demo123', confirmPassword: '', name: '' });
+    }
     addNotification('Демо-данные загружены', 'info', 2000);
   };
 
@@ -72,8 +121,21 @@ export const LoginForm = () => {
           <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
             <Brain className="h-8 w-8 text-blue-600" aria-hidden="true" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">AI Business Planner</h2>
-          <p className="text-gray-600 mt-2">Войдите для доступа к платформе</p>
+          <div className="flex items-center justify-center mb-2">
+            {isRegistering && (
+              <button
+                type="button"
+                onClick={toggleMode}
+                className="mr-3 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            )}
+            <h2 className="text-2xl font-bold text-gray-900">AI Business Planner</h2>
+          </div>
+          <p className="text-gray-600 mt-2">
+            {isRegistering ? 'Создайте аккаунт для доступа' : 'Войдите для доступа к платформе'}
+          </p>
         </div>
 
         {/* Demo notice */}
@@ -82,7 +144,7 @@ export const LoginForm = () => {
             🚀 Supabase Backend
           </h3>
           <p className="text-sm text-blue-700 mb-3">
-            Создайте аккаунт или войдите с существующими данными
+            {isRegistering ? 'Заполните форму или используйте демо-данные' : 'Создайте аккаунт или войдите с существующими данными'}
           </p>
           <Button
             type="button"
@@ -91,12 +153,25 @@ export const LoginForm = () => {
             onClick={handleDemoLogin}
             className="w-full"
           >
-            Загрузить демо-данные
+            {isRegistering ? 'Заполнить демо-данными' : 'Загрузить демо-данные'}
           </Button>
         </div>
 
-        {/* Login form */}
-        <form onSubmit={handleLogin} className="space-y-4">
+        {/* Login/Registration form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {isRegistering && (
+            <Input
+              label="Имя"
+              type="text"
+              value={formData.name}
+              onChange={(e) => handleInputChange('name', e.target.value)}
+              placeholder="Ваше имя"
+              error={getFieldError('name')}
+              required
+              autoComplete="name"
+            />
+          )}
+          
           <Input
             label="Email"
             type="email"
@@ -116,9 +191,23 @@ export const LoginForm = () => {
             placeholder="••••••••"
             error={getFieldError('password')}
             required
-            autoComplete="current-password"
+            autoComplete={isRegistering ? "new-password" : "current-password"}
             showPasswordToggle
           />
+          
+          {isRegistering && (
+            <Input
+              label="Подтвердите пароль"
+              type="password"
+              value={formData.confirmPassword}
+              onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+              placeholder="••••••••"
+              error={getFieldError('confirmPassword')}
+              required
+              autoComplete="new-password"
+              showPasswordToggle
+            />
+          )}
           
           <Button
             type="submit"
@@ -126,20 +215,23 @@ export const LoginForm = () => {
             disabled={Object.keys(errors).length > 0}
             fullWidth
           >
-            {isLoading ? 'Вход...' : 'Войти'}
+            {isLoading 
+              ? (isRegistering ? 'Регистрация...' : 'Вход...') 
+              : (isRegistering ? 'Зарегистрироваться' : 'Войти')
+            }
           </Button>
         </form>
 
         {/* Additional info */}
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-600">
-            Нет аккаунта?{' '}
+            {isRegistering ? 'Уже есть аккаунт?' : 'Нет аккаунта?'}{' '}
             <button 
               type="button"
               className="text-blue-600 hover:text-blue-800 font-medium"
-              onClick={() => addNotification('Функция регистрации будет добавлена позже', 'info')}
+              onClick={toggleMode}
             >
-              Зарегистрироваться
+              {isRegistering ? 'Войти' : 'Зарегистрироваться'}
             </button>
           </p>
         </div>
