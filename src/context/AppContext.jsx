@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { useSupabase, useProfile, useBusinessPlans, useChatMessages, useUploadedFiles } from '../hooks/useSupabase';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import { useSupabase } from '../hooks/useSupabase';
 import { AIService } from '../services/AIService';
 import { ExportService } from '../services/ExportService';
 import { translate } from '../utils/translations';
@@ -16,11 +16,26 @@ export const useAppContext = () => {
 
 export const AppProvider = ({ children }) => {
   // Supabase integration
-  const { user, session, loading: authLoading, signUp, signIn, signOut } = useSupabase();
-  const { profile, updateProfile } = useProfile(user?.id);
-  const { businessPlans, createBusinessPlan, updateBusinessPlan, deleteBusinessPlan } = useBusinessPlans(user?.id);
-  const { chatMessages, createChatMessage, clearChatMessages } = useChatMessages(user?.id);
-  const { uploadedFiles, createUploadedFile, deleteUploadedFile, clearUploadedFiles } = useUploadedFiles(user?.id);
+  const { 
+    user, 
+    session, 
+    loading: authLoading, 
+    signUp, 
+    signIn, 
+    signOut,
+    createProfile,
+    getProfile,
+    updateProfile,
+    createChatMessage,
+    getChatMessages,
+    clearChatMessages,
+    createBusinessPlan,
+    getBusinessPlans,
+    createUploadedFile,
+    getUploadedFiles,
+    deleteUploadedFile,
+    clearUploadedFiles
+  } = useSupabase();
 
   // State management
   const [isAuthenticated, setIsAuthenticated] = useState(!!session);
@@ -31,92 +46,171 @@ export const AppProvider = ({ children }) => {
   const [uploadProgress, setUploadProgress] = useState({});
   const [exportProgress, setExportProgress] = useState({});
   const [notifications, setNotifications] = useState([]);
-
-  // Update authentication state when session changes
-  React.useEffect(() => {
-    setIsAuthenticated(!!session);
-  }, [session]);
-
-  // Current user computed from profile
-  const currentUser = useMemo(() => {
-    if (!profile) {
-      return {
-        name: user?.email?.split('@')[0] || 'User',
-        email: user?.email || '',
-        apiKeys: {},
-        preferences: {
-          language: 'ru',
-          aiModel: 'gpt-4',
-          autoSave: true,
-          voiceEnabled: true,
-          accessibilityMode: false,
-          notificationDuration: 5000,
-          theme: 'light'
-        }
-      };
+  
+  // Database-backed state
+  const [chatHistory, setChatHistory] = useState([]);
+  const [businessPlans, setBusinessPlans] = useState([]);
+  const [uploadedDatasets, setUploadedDatasets] = useState([]);
+  const [currentUser, setCurrentUser] = useState({
+    name: 'Demo User',
+    email: 'demo@example.com',
+    apiKeys: {},
+    preferences: {
+      language: 'ru',
+      aiModel: 'gpt-4',
+      autoSave: true,
+      voiceEnabled: true,
+      accessibilityMode: false,
+      notificationDuration: 5000,
+      theme: 'light'
     }
-    return {
-      name: profile.name,
-      email: profile.email,
-      apiKeys: profile.api_keys || {},
-      preferences: profile.preferences || {
-        language: 'ru',
-        aiModel: 'gpt-4',
-        autoSave: true,
-        voiceEnabled: true,
-        accessibilityMode: false,
-        notificationDuration: 5000,
-        theme: 'light'
+  });
+
+  // Load user data when authenticated
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (user) {
+        setIsAuthenticated(true);
+        
+        // Set user data from ACTUAL authenticated user immediately
+        const userName = user.user_metadata?.name || user.email?.split('@')[0] || 'User';
+        const userEmail = user.email;
+        
+        console.log('Authenticated user:', { userName, userEmail, user }); // Debug log
+        
+        try {
+          // Get or create profile
+          let { data: profile, error } = await getProfile();
+          
+          if (error && error.message?.includes('0 rows')) {
+            // Profile doesn't exist, create it
+            const { data: newProfile, error: createError } = await createProfile({
+              name: userName,
+              email: userEmail,
+              preferences: {
+                language: 'ru',
+                aiModel: 'gpt-4',
+                autoSave: true,
+                voiceEnabled: true,
+                accessibilityMode: false,
+                notificationDuration: 5000,
+                theme: 'light'
+              },
+              api_keys: {}
+            });
+            
+            if (!createError) {
+              profile = newProfile;
+            }
+          }
+          
+          if (profile) {
+            setCurrentUser({
+              name: profile.name,
+              email: profile.email,
+              apiKeys: profile.api_keys || {},
+              preferences: {
+                language: 'ru',
+                aiModel: 'gpt-4',
+                autoSave: true,
+                voiceEnabled: true,
+                accessibilityMode: false,
+                notificationDuration: 5000,
+                theme: 'light',
+                ...profile.preferences
+              }
+            });
+          } else {
+            // If no profile found, use ACTUAL authenticated user data
+            setCurrentUser({
+              name: userName,
+              email: userEmail,
+              apiKeys: {},
+              preferences: {
+                language: 'ru',
+                aiModel: 'gpt-4',
+                autoSave: true,
+                voiceEnabled: true,
+                accessibilityMode: false,
+                notificationDuration: 5000,
+                theme: 'light'
+              }
+            });
+          }
+          
+          // Load chat messages
+          const { data: messages } = await getChatMessages();
+          if (messages) {
+            const formattedMessages = messages.map(msg => ({
+              id: msg.id,
+              text: msg.message,
+              sender: msg.sender,
+              timestamp: new Date(msg.created_at).toLocaleTimeString('ru-RU'),
+              model: msg.ai_model
+            }));
+            setChatHistory(formattedMessages);
+          }
+          
+          // Load business plans
+          const { data: plans } = await getBusinessPlans();
+          if (plans) {
+            const formattedPlans = plans.map(plan => ({
+              id: plan.id,
+              name: plan.name,
+              content: plan.content,
+              status: plan.status,
+              aiModel: plan.ai_model,
+              date: new Date(plan.created_at).toLocaleDateString('ru-RU'),
+              created_at: plan.created_at,
+              updated_at: plan.updated_at
+            }));
+            setBusinessPlans(formattedPlans);
+          }
+          
+          // Load uploaded files
+          const { data: files } = await getUploadedFiles();
+          if (files) {
+            const formattedFiles = files.map(file => ({
+              id: file.id,
+              name: file.name,
+              size: `${(file.size / 1024).toFixed(1)} KB`,
+              type: file.type,
+              uploadDate: new Date(file.created_at).toLocaleDateString('ru-RU'),
+              content: file.content
+            }));
+            setUploadedDatasets(formattedFiles);
+          }
+          
+        } catch (error) {
+          console.error('Error loading user data:', error);
+        }
+      } else {
+        setIsAuthenticated(false);
+        // Reset to demo data when not authenticated
+        setChatHistory([]);
+        setBusinessPlans([]);
+        setUploadedDatasets([]);
+        setCurrentUser({
+          name: 'Demo User',
+          email: 'demo@example.com',
+          apiKeys: {},
+          preferences: {
+            language: 'ru',
+            aiModel: 'gpt-4',
+            autoSave: true,
+            voiceEnabled: true,
+            accessibilityMode: false,
+            notificationDuration: 5000,
+            theme: 'light'
+          }
+        });
       }
     };
-  }, [profile, user]);
 
-  // Update current user function
-  const setCurrentUser = useCallback(async (updates) => {
-    if (!user?.id) return;
-    
-    try {
-      await updateProfile(updates);
-      addNotification('Профиль обновлен', 'success');
-    } catch (error) {
-      console.error('Error updating profile:', error);
-      addNotification('Ошибка обновления профиля', 'error');
+    if (!authLoading) {
+      loadUserData();
     }
-  }, [user?.id, updateProfile]);
-
-  // Chat history from messages
-  const chatHistory = useMemo(() => {
-    return chatMessages.map(msg => ({
-      id: msg.id,
-      text: msg.message,
-      sender: msg.sender,
-      timestamp: new Date(msg.created_at).toLocaleTimeString('ru-RU'),
-      model: msg.ai_model
-    }));
-  }, [chatMessages]);
-
-  // Set chat history function
-  const setChatHistory = useCallback(async (newMessages) => {
-    // This is handled by the chat message hooks
-    // We'll implement this in the chat interface
-  }, []);
-
-  // Uploaded datasets from files
-  const uploadedDatasets = useMemo(() => {
-    return uploadedFiles.map(file => ({
-      id: file.id,
-      name: file.name,
-      size: `${(file.size / 1024).toFixed(1)} KB`,
-      type: file.type,
-      uploadDate: new Date(file.created_at).toISOString().split('T')[0],
-      content: file.content
-    }));
-  }, [uploadedFiles]);
-
-  // Set uploaded datasets function
-  const setUploadedDatasets = useCallback(async (updates) => {
-    // This is handled by the uploaded files hooks
-  }, []);
+  }, [user, authLoading]);
 
   // Translation function
   const t = useCallback((key, fallback = key) => {
@@ -149,16 +243,18 @@ export const AppProvider = ({ children }) => {
   }), []);
 
   // API Status
-  const apiStatus = useMemo(() => ({
-    openai: currentUser.apiKeys.openai ? 'connected' : 'disconnected',
-    anthropic: currentUser.apiKeys.anthropic ? 'connected' : 'disconnected',
-    gemini: currentUser.apiKeys.gemini ? 'connected' : 'disconnected'
-  }), [currentUser.apiKeys]);
+  const apiStatus = useMemo(() => {
+    const keys = currentUser.apiKeys;
+    return {
+      openai: keys?.openai && keys.openai.trim() ? 'connected' : 'disconnected',
+      anthropic: keys?.anthropic && keys.anthropic.trim() ? 'connected' : 'disconnected', 
+      gemini: keys?.gemini && keys.gemini.trim() ? 'connected' : 'disconnected'
+    };
+  }, [currentUser.apiKeys]);
 
-  // Notification system with translations
+  // Notification system
   const addNotification = useCallback((messageKey, type = 'info', duration = null, actions = null) => {
     try {
-      // If messageKey is already a translated string, use it directly
       const message = messageKey.includes('.') ? t(messageKey) : messageKey;
       
       const notification = {
@@ -188,59 +284,100 @@ export const AppProvider = ({ children }) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
-  // AI Response generation
+  // Update current user and save to database
+  const updateCurrentUser = useCallback(async (updates) => {
+    const newUserData = { ...currentUser, ...updates };
+    setCurrentUser(newUserData);
+    
+    if (user) {
+      try {
+        await updateProfile({
+          name: newUserData.name,
+          email: newUserData.email,
+          preferences: newUserData.preferences,
+          api_keys: newUserData.apiKeys
+        });
+      } catch (error) {
+        console.error('Error updating profile:', error);
+      }
+    }
+  }, [currentUser, user, updateProfile]);
+
+  // AI Response generation with database save
   const generateAIResponse = useCallback(async (prompt) => {
     try {
       const model = aiModels[currentUser.preferences.aiModel];
       const apiKeyField = currentUser.preferences.aiModel === 'gpt-4' ? 'openai' :
                           currentUser.preferences.aiModel === 'claude-3' ? 'anthropic' : 'gemini';
+      
       const apiKey = currentUser.apiKeys[apiKeyField];
 
-      if (!apiKey) {
-        addNotification(`Настройте API ключ для ${model.name} в профиле`, 'warning', 8000);
-        // Fallback to mock response
-        return AIService.generateMockResponse(prompt);
-      }
-
+      setIsLoading(true);
       const response = await AIService.callAI(currentUser.preferences.aiModel, prompt, apiKey);
       
-      // Save AI response to database if user is authenticated
-      if (user?.id && currentUser.preferences.autoSave) {
+      // Create message objects
+      const userMessage = {
+        id: Date.now(),
+        text: prompt,
+        sender: 'user',
+        timestamp: new Date().toLocaleTimeString('ru-RU'),
+        model: currentUser.preferences.aiModel
+      };
+      
+      const aiMessage = {
+        id: Date.now() + 1,
+        text: response,
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString('ru-RU'),
+        model: currentUser.preferences.aiModel
+      };
+      
+      // Update local state
+      setChatHistory(prev => [...prev, userMessage, aiMessage]);
+      
+      // Save to database if authenticated
+      if (user && currentUser.preferences.autoSave) {
         try {
+          await createChatMessage({
+            message: prompt,
+            sender: 'user',
+            ai_model: currentUser.preferences.aiModel
+          });
+          
           await createChatMessage({
             message: response,
             sender: 'ai',
             ai_model: currentUser.preferences.aiModel
           });
-        } catch (dbError) {
-          console.error('Error saving AI message to database:', dbError);
+        } catch (error) {
+          console.error('Error saving chat messages:', error);
         }
       }
       
       return response;
-    } catch (err) {
-      console.error('AI Response Error:', err);
-      addNotification(`Ошибка AI: ${err.message}`, 'error', 8000);
-      // Fallback to mock response
-      return AIService.generateMockResponse(prompt);
+    } catch (error) {
+      handleError(error, 'AI Response Generation');
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
-  }, [currentUser.preferences.aiModel, currentUser.apiKeys, aiModels, addNotification, user?.id, currentUser.preferences.autoSave, createChatMessage]);
+  }, [currentUser.preferences.aiModel, currentUser.apiKeys, aiModels, user, currentUser.preferences.autoSave]);
 
   // Error handling
   const handleError = useCallback((error, context = '') => {
     console.error(`Error in ${context}:`, error);
     setError(error.message || 'Произошла неизвестная ошибка');
-    addNotification(`Ошибка${context ? ` в ${context}` : ''}: ${error.message}`, 'error', 8000);
+    addNotification(`Ошибка: ${error.message}`, 'error');
   }, [addNotification]);
 
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
-  // File upload with progress
+  // File upload with database save
   const uploadFileWithProgress = useCallback(async (file) => {
     const fileId = Date.now() + Math.random();
-
+    
     try {
       setUploadProgress(prev => ({ ...prev, [fileId]: 0 }));
 
@@ -266,31 +403,29 @@ export const AppProvider = ({ children }) => {
         content = `File processing error: ${err.message}`;
       }
 
-      // Save to database if user is authenticated
-      let newDataset;
-      if (user?.id) {
-        const { data, error } = await createUploadedFile({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          content: content.substring(0, 1000) + (content.length > 1000 ? '...' : '')
-        });
-        
-        if (error) {
-          throw new Error(`Database error: ${error.message}`);
+      const newDataset = {
+        id: fileId,
+        name: file.name,
+        size: `${(file.size / 1024).toFixed(1)} KB`,
+        type: file.type,
+        uploadDate: new Date().toISOString().split('T')[0],
+        content: content.substring(0, 1000) + (content.length > 1000 ? '...' : '')
+      };
+
+      setUploadedDatasets(prev => [newDataset, ...prev]);
+
+      // Save to database if authenticated
+      if (user) {
+        try {
+          await createUploadedFile({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            content: content.substring(0, 1000) + (content.length > 1000 ? '...' : '')
+          });
+        } catch (error) {
+          console.error('Error saving uploaded file:', error);
         }
-        
-        newDataset = data;
-      } else {
-        // Fallback for non-authenticated users
-        newDataset = {
-          id: fileId,
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          content: content.substring(0, 1000) + (content.length > 1000 ? '...' : ''),
-          created_at: new Date().toISOString()
-        };
       }
 
       setUploadProgress(prev => {
@@ -309,7 +444,52 @@ export const AppProvider = ({ children }) => {
       });
       throw error;
     }
-  }, [addNotification, user?.id, createUploadedFile]);
+  }, [addNotification, user]);
+
+  // Delete uploaded file with database sync
+  const deleteUploadedFileLocal = useCallback(async (id) => {
+    setUploadedDatasets(prev => prev.filter(file => file.id !== id));
+    
+    if (user) {
+      try {
+        await deleteUploadedFile(id);
+      } catch (error) {
+        console.error('Error deleting file from database:', error);
+      }
+    }
+    
+    addNotification('Файл удален', 'success', 2000);
+  }, [addNotification, user]);
+
+  // Clear chat history with database sync
+  const clearChatHistory = useCallback(async () => {
+    setChatHistory([]);
+    
+    if (user) {
+      try {
+        await clearChatMessages();
+      } catch (error) {
+        console.error('Error clearing chat messages:', error);
+      }
+    }
+    
+    addNotification('История чатов очищена', 'success');
+  }, [addNotification, user]);
+
+  // Clear uploaded files with database sync
+  const clearUploadedFilesLocal = useCallback(async () => {
+    setUploadedDatasets([]);
+    
+    if (user) {
+      try {
+        await clearUploadedFiles();
+      } catch (error) {
+        console.error('Error clearing uploaded files:', error);
+      }
+    }
+    
+    addNotification('Загруженные файлы удалены', 'success');
+  }, [addNotification, user]);
 
   // Authentication functions
   const handleSignUp = useCallback(async (email, password, userData = {}) => {
@@ -350,55 +530,6 @@ export const AppProvider = ({ children }) => {
     }
   }, [signOut, addNotification]);
 
-  // Business plan functions
-  const handleCreateBusinessPlan = useCallback(async (planData) => {
-    if (!user?.id) {
-      addNotification('Войдите в систему для создания планов', 'warning');
-      return { error: 'Not authenticated' };
-    }
-
-    try {
-      const { data, error } = await createBusinessPlan({
-        name: file.name,
-        content: planData.content || '',
-        ai_model: currentUser.preferences.aiModel,
-        status: planData.status || 'draft'
-      });
-      
-      if (error) throw error;
-      
-      addNotification(`Бизнес-план "${planData.name}" создан`, 'success');
-      return { data };
-    } catch (error) {
-      addNotification(`Ошибка создания плана: ${error.message}`, 'error');
-      return { error };
-    }
-  }, [user?.id, createBusinessPlan, currentUser.preferences.aiModel, addNotification]);
-
-  // Clear data functions
-  const handleClearChatHistory = useCallback(async () => {
-    if (user?.id) {
-      try {
-        await clearChatMessages();
-        addNotification('История чатов очищена', 'success');
-      } catch (error) {
-        addNotification(`Ошибка очистки чатов: ${error.message}`, 'error');
-      }
-    }
-  }, [user?.id, clearChatMessages, addNotification]);
-
-  const handleClearUploadedFiles = useCallback(async () => {
-    if (user?.id) {
-      try {
-        await clearUploadedFiles();
-        addNotification('Загруженные файлы удалены', 'success');
-      } catch (error) {
-        addNotification(`Ошибка удаления файлов: ${error.message}`, 'error');
-      }
-    }
-  }, [user?.id, clearUploadedFiles, addNotification]);
-
-
   // Export with progress
   const exportDocument = useCallback(async (format, content, title) => {
     const exportId = Date.now();
@@ -432,7 +563,7 @@ export const AppProvider = ({ children }) => {
       addNotification(
         `Документ "${title}" готов к скачиванию`,
         'success',
-        0, // persistent
+        0,
         [{
           label: 'Скачать',
           action: () => {
@@ -464,7 +595,6 @@ export const AppProvider = ({ children }) => {
       setIsRecording(true);
       addNotification('Начинаю запись голоса...', 'info', 2000);
 
-      // Simulate voice recognition
       await new Promise(resolve => setTimeout(resolve, 4000));
       
       const voicePrompts = [
@@ -480,47 +610,31 @@ export const AppProvider = ({ children }) => {
       return randomPrompt;
     } catch (error) {
       handleError(error, 'Voice Recording');
-      return null;
+      throw error;
     } finally {
       setIsRecording(false);
     }
   }, [addNotification, handleError]);
 
-  // Language change handler
-  const changeLanguage = useCallback((newLanguage) => {
-    setCurrentUser(prev => ({
-      ...prev,
-      preferences: { ...prev.preferences, language: newLanguage }
-    }));
-    
-    // Translate notification
-    const welcomeMessages = {
-      'ru': 'Язык изменен на русский',
-      'en': 'Language changed to English',
-      'zh': '语言已更改为中文'
-    };
-    
-    addNotification(welcomeMessages[newLanguage] || 'Language changed', 'success', 3000);
-  }, [addNotification]);
-
   // Context value
   const value = useMemo(() => ({
     // State
     currentUser,
-    setCurrentUser,
+    setCurrentUser: updateCurrentUser,
     isAuthenticated,
     setIsAuthenticated,
     authLoading,
     activeModule,
     setActiveModule,
     chatHistory,
-    setChatHistory,
+    setChatHistory: clearChatHistory,
     isLoading,
     setIsLoading,
     isRecording,
     setIsRecording,
     businessPlans,
     uploadedDatasets,
+    setUploadedDatasets: clearUploadedFilesLocal,
     notifications,
     setNotifications,
     error,
@@ -530,7 +644,6 @@ export const AppProvider = ({ children }) => {
     // Supabase data
     user,
     session,
-    profile,
 
     // Constants
     aiModels,
@@ -543,38 +656,26 @@ export const AppProvider = ({ children }) => {
     handleError,
     clearError,
     uploadFileWithProgress,
+    deleteUploadedFile: deleteUploadedFileLocal,
     exportDocument,
     startVoiceRecording,
-    changeLanguage,
-    t, // Translation function
+    t,
     
     // Auth functions
     signUp: handleSignUp,
     signIn: handleSignIn,
     signOut: handleSignOut,
     
-    // Business plan functions
-    createBusinessPlan: handleCreateBusinessPlan,
-    updateBusinessPlan,
-    deleteBusinessPlan,
-    
-    // Chat functions
+    // Database functions
     createChatMessage,
-    clearChatHistory: handleClearChatHistory,
-    
-    // File functions
-    createUploadedFile,
-    deleteUploadedFile,
-    clearUploadedFiles: handleClearUploadedFiles
+    createBusinessPlan,
+    createUploadedFile
   }), [
-    currentUser, isAuthenticated, authLoading, activeModule, chatHistory, isLoading, isRecording,
-    businessPlans, uploadedDatasets, notifications, error, uploadProgress, exportProgress,
-    user, session, profile,
-    aiModels, apiStatus, addNotification, removeNotification, generateAIResponse,
-    handleError, clearError, uploadFileWithProgress, exportDocument, startVoiceRecording,
-    changeLanguage, t, handleSignUp, handleSignIn, handleSignOut, handleCreateBusinessPlan,
-    updateBusinessPlan, deleteBusinessPlan, createChatMessage, handleClearChatHistory,
-    createUploadedFile, deleteUploadedFile, handleClearUploadedFiles
+    currentUser, updateCurrentUser, isAuthenticated, authLoading, activeModule, chatHistory, clearChatHistory,
+    isLoading, isRecording, businessPlans, uploadedDatasets, clearUploadedFilesLocal, notifications, error, 
+    uploadProgress, exportProgress, user, session, aiModels, apiStatus, addNotification, removeNotification, 
+    generateAIResponse, handleError, clearError, uploadFileWithProgress, deleteUploadedFileLocal, exportDocument, 
+    startVoiceRecording, t, handleSignUp, handleSignIn, handleSignOut
   ]);
 
   return (

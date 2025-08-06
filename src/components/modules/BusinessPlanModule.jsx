@@ -70,6 +70,7 @@ const ChatInterface = () => {
           });
         } catch (dbError) {
           console.error('Error saving user message to database:', dbError);
+          // Don't fail the whole operation if DB save fails
         }
       }
       
@@ -78,10 +79,15 @@ const ChatInterface = () => {
       setIsLoading(true);
 
       // Генерируем ответ AI
-      const aiResponseText = await generateAIResponse(userMessage);
-      
-      if (currentUser.preferences.autoSave) {
-        addNotification('Диалог автоматически сохранен', 'success', 2000);
+      try {
+        const aiResponseText = await generateAIResponse(userMessage);
+        
+        if (currentUser.preferences.autoSave) {
+          addNotification('Диалог автоматически сохранен', 'success', 2000);
+        }
+      } catch (aiError) {
+        console.error('AI response error:', aiError);
+        addNotification('Ошибка получения ответа от AI', 'error');
       }
     } catch (error) {
       console.error('Chat error:', error);
@@ -513,10 +519,8 @@ export const BusinessPlanModule = () => {
   const { currentUser, setCurrentUser, aiModels, addNotification } = useAppContext();
   
   const handleModelChange = (model) => {
-    setCurrentUser(prev => ({
-      ...prev,
-      preferences: { ...prev.preferences, aiModel: model }
-    }));
+    const updatedPreferences = { ...currentUser.preferences, aiModel: model };
+    setCurrentUser({ preferences: updatedPreferences });
     addNotification(`Переключено на ${aiModels[model].name}`, 'info', 2000);
   };
   

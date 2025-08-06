@@ -28,16 +28,16 @@ export class AIService {
   static async callOpenAI(prompt, apiKey) {
     // Более мягкая валидация
     if (!apiKey || !apiKey.trim()) {
-      throw new Error('OpenAI API ключ не указан');
+      return this.generateMockResponse(prompt);
     }
 
     const trimmedKey = apiKey.trim();
     if (!trimmedKey.startsWith('sk-')) {
-      throw new Error('OpenAI API ключ должен начинаться с "sk-"');
+      return this.generateMockResponse(prompt);
     }
 
     if (trimmedKey.length < 20) {
-      throw new Error('OpenAI API ключ слишком короткий');
+      return this.generateMockResponse(prompt);
     }
 
     try {
@@ -110,12 +110,12 @@ export class AIService {
   // Исправленная валидация Anthropic API
   static async callClaude(prompt, apiKey) {
     if (!apiKey || !apiKey.trim()) {
-      throw new Error('Anthropic API ключ не указан');
+      return this.generateMockResponse(prompt);
     }
 
     const trimmedKey = apiKey.trim();
     if (!trimmedKey.startsWith('sk-ant-')) {
-      throw new Error('Anthropic API ключ должен начинаться с "sk-ant-"');
+      return this.generateMockResponse(prompt);
     }
 
     try {
@@ -174,12 +174,12 @@ export class AIService {
   // Исправленная валидация Gemini API
   static async callGemini(prompt, apiKey) {
     if (!apiKey || !apiKey.trim()) {
-      throw new Error('Google API ключ не указан');
+      return this.generateMockResponse(prompt);
     }
 
     const trimmedKey = apiKey.trim();
     if (!trimmedKey.startsWith('AIza')) {
-      throw new Error('Google API ключ должен начинаться с "AIza"');
+      return this.generateMockResponse(prompt);
     }
 
     try {

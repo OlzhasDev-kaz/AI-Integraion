@@ -32,7 +32,7 @@ const APIKeysSection = () => {
       return;
     }
     
-    setCurrentUser(prev => ({ ...prev, apiKeys: tempKeys }));
+    setCurrentUser({ apiKeys: tempKeys });
     addNotification('API ключи сохранены', 'success');
   };
   
@@ -134,7 +134,7 @@ const ProfileSettings = () => {
   
   const handleSave = () => {
     if (validateAll(formData)) {
-      setCurrentUser(prev => ({ ...prev, ...formData }));
+      setCurrentUser({ ...formData });
       addNotification('Профиль обновлен', 'success');
     } else {
       addNotification('Исправьте ошибки в форме', 'error');
@@ -195,10 +195,9 @@ const PreferencesSection = () => {
   const { currentUser, setCurrentUser, addNotification, aiModels } = useAppContext();
   
   const handlePreferenceChange = (key, value) => {
-    setCurrentUser(prev => ({
-      ...prev,
-      preferences: { ...prev.preferences, [key]: value }
-    }));
+    setCurrentUser({ 
+      preferences: { ...currentUser.preferences, [key]: value }
+    });
     addNotification('Настройки обновлены', 'success', 2000);
   };
   
@@ -584,10 +583,11 @@ ${'='.repeat(50)}`;
 
 // Account Actions Section
 const AccountActionsSection = () => {
-  const { signOut, addNotification } = useAppContext();
+  const { setIsAuthenticated, addNotification } = useAppContext();
   
   const handleLogout = () => {
-    signOut();
+    setIsAuthenticated(false);
+    addNotification('Вы вышли из системы', 'info');
   };
   
   return (
@@ -607,7 +607,7 @@ const AccountActionsSection = () => {
       
       <div className="mt-4 p-3 bg-gray-50 rounded-lg">
         <p className="text-xs text-gray-600">
-          💡 Ваши данные сохраняются в облаке Supabase
+          💡 В демо-версии данные не сохраняются между сессиями
         </p>
       </div>
     </div>

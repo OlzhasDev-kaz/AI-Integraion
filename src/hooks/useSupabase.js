@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase, auth, db } from '../lib/supabase';
+import { supabase, auth } from '../lib/supabase';
 
 export const useSupabase = () => {
   const [user, setUser] = useState(null);
@@ -20,41 +20,169 @@ export const useSupabase = () => {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
-
-        // Create profile on sign up
-        if (event === 'SIGNED_UP' && session?.user) {
-          await createUserProfile(session.user);
-        }
       }
     );
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const createUserProfile = async (user) => {
-    try {
-      const { error } = await db.createProfile({
+  // Database operations
+  const createProfile = async (userData) => {
+    if (!user) return { error: new Error('No authenticated user') };
+    
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert({
         id: user.id,
-        name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+        name: userData.name || user.email?.split('@')[0] || 'User',
         email: user.email,
-        preferences: {
-          language: 'ru',
-          aiModel: 'gpt-4',
-          autoSave: true,
-          voiceEnabled: true,
-          accessibilityMode: false,
-          notificationDuration: 5000,
-          theme: 'light'
-        },
-        api_keys: {}
-      });
+        preferences: userData.preferences || {},
+        api_keys: userData.api_keys || {}
+      })
+      .select()
+      .single();
+    
+    return { data, error };
+  };
 
-      if (error) {
-        console.error('Error creating profile:', error);
-      }
-    } catch (error) {
-      console.error('Error creating profile:', error);
-    }
+  const getProfile = async () => {
+    if (!user) return { data: null, error: new Error('No authenticated user') };
+    
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+    
+    return { data, error };
+  };
+
+  const updateProfile = async (updates) => {
+    if (!user) return { error: new Error('No authenticated user') };
+    
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', user.id)
+      .select()
+      .single();
+    
+    return { data, error };
+  };
+
+  const createChatMessage = async (messageData) => {
+    if (!user) return { error: new Error('No authenticated user') };
+    
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .insert({
+        user_id: user.id,
+        ...messageData
+      })
+      .select()
+      .single();
+    
+    return { data, error };
+  };
+
+  const getChatMessages = async () => {
+    if (!user) return { data: [], error: new Error('No authenticated user') };
+    
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true });
+    
+    return { data: data || [], error };
+  };
+
+  const clearChatMessages = async () => {
+    if (!user) return { error: new Error('No authenticated user') };
+    
+    const { error } = await supabase
+      .from('chat_messages')
+      .delete()
+      .eq('user_id', user.id);
+    
+    return { error };
+  };
+
+  const createBusinessPlan = async (planData) => {
+    if (!user) return { error: new Error('No authenticated user') };
+    
+    const { data, error } = await supabase
+      .from('business_plans')
+      .insert({
+        user_id: user.id,
+        ...planData
+      })
+      .select()
+      .single();
+    
+    return { data, error };
+  };
+
+  const getBusinessPlans = async () => {
+    if (!user) return { data: [], error: new Error('No authenticated user') };
+    
+    const { data, error } = await supabase
+      .from('business_plans')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    
+    return { data: data || [], error };
+  };
+
+  const createUploadedFile = async (fileData) => {
+    if (!user) return { error: new Error('No authenticated user') };
+    
+    const { data, error } = await supabase
+      .from('uploaded_files')
+      .insert({
+        user_id: user.id,
+        ...fileData
+      })
+      .select()
+      .single();
+    
+    return { data, error };
+  };
+
+  const getUploadedFiles = async () => {
+    if (!user) return { data: [], error: new Error('No authenticated user') };
+    
+    const { data, error } = await supabase
+      .from('uploaded_files')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    
+    return { data: data || [], error };
+  };
+
+  const deleteUploadedFile = async (fileId) => {
+    if (!user) return { error: new Error('No authenticated user') };
+    
+    const { error } = await supabase
+      .from('uploaded_files')
+      .delete()
+      .eq('id', fileId)
+      .eq('user_id', user.id);
+    
+    return { error };
+  };
+
+  const clearUploadedFiles = async () => {
+    if (!user) return { error: new Error('No authenticated user') };
+    
+    const { error } = await supabase
+      .from('uploaded_files')
+      .delete()
+      .eq('user_id', user.id);
+    
+    return { error };
   };
 
   return {
@@ -64,329 +192,18 @@ export const useSupabase = () => {
     signUp: auth.signUp,
     signIn: auth.signIn,
     signOut: auth.signOut,
-    supabase
-  };
-};
-
-export const useProfile = (userId) => {
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchProfile = async () => {
-      try {
-        setLoading(true);
-        const { data, error } = await db.getProfile(userId);
-        
-        if (error) {
-          setError(error);
-        } else {
-          setProfile(data);
-        }
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProfile();
-  }, [userId]);
-
-  const updateProfile = async (updates) => {
-    try {
-      const { data, error } = await db.updateProfile(userId, updates);
-      if (error) {
-        setError(error);
-        return { error };
-      }
-      setProfile(data);
-      return { data };
-    } catch (err) {
-      setError(err);
-      return { error: err };
-    }
-  };
-
-  return {
-    profile,
-    loading,
-    error,
-    updateProfile
-  };
-};
-
-export const useBusinessPlans = (userId) => {
-  const [businessPlans, setBusinessPlans] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchBusinessPlans = async () => {
-      try {
-        setLoading(true);
-        const { data, error } = await db.getBusinessPlans(userId);
-        
-        if (error) {
-          setError(error);
-        } else {
-          setBusinessPlans(data || []);
-        }
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchBusinessPlans();
-  }, [userId]);
-
-  const createBusinessPlan = async (plan) => {
-    try {
-      const { data, error } = await db.createBusinessPlan({
-        ...plan,
-        user_id: userId
-      });
-      
-      if (error) {
-        setError(error);
-        return { error };
-      }
-      
-      setBusinessPlans(prev => [data, ...prev]);
-      return { data };
-    } catch (err) {
-      setError(err);
-      return { error: err };
-    }
-  };
-
-  const updateBusinessPlan = async (planId, updates) => {
-    try {
-      const { data, error } = await db.updateBusinessPlan(planId, updates);
-      
-      if (error) {
-        setError(error);
-        return { error };
-      }
-      
-      setBusinessPlans(prev => 
-        prev.map(plan => plan.id === planId ? data : plan)
-      );
-      return { data };
-    } catch (err) {
-      setError(err);
-      return { error: err };
-    }
-  };
-
-  const deleteBusinessPlan = async (planId) => {
-    try {
-      const { error } = await db.deleteBusinessPlan(planId);
-      
-      if (error) {
-        setError(error);
-        return { error };
-      }
-      
-      setBusinessPlans(prev => prev.filter(plan => plan.id !== planId));
-      return { success: true };
-    } catch (err) {
-      setError(err);
-      return { error: err };
-    }
-  };
-
-  return {
-    businessPlans,
-    loading,
-    error,
-    createBusinessPlan,
-    updateBusinessPlan,
-    deleteBusinessPlan
-  };
-};
-
-export const useChatMessages = (userId, businessPlanId = null) => {
-  const [chatMessages, setChatMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchChatMessages = async () => {
-      try {
-        setLoading(true);
-        const { data, error } = await db.getChatMessages(userId, businessPlanId);
-        
-        if (error) {
-          setError(error);
-        } else {
-          setChatMessages(data || []);
-        }
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchChatMessages();
-  }, [userId, businessPlanId]);
-
-  const createChatMessage = async (message) => {
-    try {
-      const { data, error } = await db.createChatMessage({
-        ...message,
-        user_id: userId,
-        business_plan_id: businessPlanId
-      });
-      
-      if (error) {
-        setError(error);
-        return { error };
-      }
-      
-      setChatMessages(prev => [...prev, data]);
-      return { data };
-    } catch (err) {
-      setError(err);
-      return { error: err };
-    }
-  };
-
-  const clearChatMessages = async () => {
-    try {
-      const { error } = await db.deleteChatMessages(userId, businessPlanId);
-      
-      if (error) {
-        setError(error);
-        return { error };
-      }
-      
-      setChatMessages([]);
-      return { success: true };
-    } catch (err) {
-      setError(err);
-      return { error: err };
-    }
-  };
-
-  return {
-    chatMessages,
-    loading,
-    error,
+    supabase,
+    // Database operations
+    createProfile,
+    getProfile,
+    updateProfile,
     createChatMessage,
-    clearChatMessages
-  };
-};
-
-export const useUploadedFiles = (userId) => {
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchUploadedFiles = async () => {
-      try {
-        setLoading(true);
-        const { data, error } = await db.getUploadedFiles(userId);
-        
-        if (error) {
-          setError(error);
-        } else {
-          setUploadedFiles(data || []);
-        }
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUploadedFiles();
-  }, [userId]);
-
-  const createUploadedFile = async (file) => {
-    try {
-      const { data, error } = await db.createUploadedFile({
-        ...file,
-        user_id: userId
-      });
-      
-      if (error) {
-        setError(error);
-        return { error };
-      }
-      
-      setUploadedFiles(prev => [data, ...prev]);
-      return { data };
-    } catch (err) {
-      setError(err);
-      return { error: err };
-    }
-  };
-
-  const deleteUploadedFile = async (fileId) => {
-    try {
-      const { error } = await db.deleteUploadedFile(fileId);
-      
-      if (error) {
-        setError(error);
-        return { error };
-      }
-      
-      setUploadedFiles(prev => prev.filter(file => file.id !== fileId));
-      return { success: true };
-    } catch (err) {
-      setError(err);
-      return { error: err };
-    }
-  };
-
-  const clearUploadedFiles = async () => {
-    try {
-      const { error } = await db.deleteAllUploadedFiles(userId);
-      
-      if (error) {
-        setError(error);
-        return { error };
-      }
-      
-      setUploadedFiles([]);
-      return { success: true };
-    } catch (err) {
-      setError(err);
-      return { error: err };
-    }
-  };
-
-  return {
-    uploadedFiles,
-    loading,
-    error,
+    getChatMessages,
+    clearChatMessages,
+    createBusinessPlan,
+    getBusinessPlans,
     createUploadedFile,
+    getUploadedFiles,
     deleteUploadedFile,
     clearUploadedFiles
   };
